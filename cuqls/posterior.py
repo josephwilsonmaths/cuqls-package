@@ -2,7 +2,7 @@ import torch
 import cuqls.regression
 import cuqls.classification
 
-def cuqls(
+def Cuqls(
     network: torch.nn.Module,
     task: str ='regression'
     ):
