@@ -38,7 +38,14 @@ class classificationParallel(object):
         jt = self.ck(x.to(self.device)).detach().reshape(x.shape[0], self.llp).T
         return torch.einsum('pn,ncs->pcs',jt,V).detach().to(self.device)
     
-    def train(self, train, batchsize, S, scale, epochs, lr, mu, verbose=False, extra_verbose=False, save_weights=None):
+    def lr_sched(self,lr,epoch,epochs,scheduler):
+        if scheduler:
+            m = (lr - lr/10) / epochs
+            return lr/10 + m*(epochs - epoch)
+        else:
+            return lr
+    
+    def train(self, train, batchsize, S, scale, epochs, lr, mu, scheduler=False, verbose=False, extra_verbose=False, save_weights=None):
         train_loader = DataLoader(train,batchsize)
 
         self.theta = torch.randn(size=(self.llp*self.num_output,S),device=self.device)*scale + self.theta_t.unsqueeze(1)
@@ -81,7 +88,7 @@ class classificationParallel(object):
                     else:
                         bt = mu*bt + g
 
-                    self.theta -= lr*bt
+                    self.theta -= self.lr_sched(lr,epoch,epochs,scheduler)*bt
 
                     l = (- 1 / x.shape[0] * torch.sum((ybar.flatten(0,1).unsqueeze(1) * torch.log(Mubar.flatten(0,1))),dim=0)).cpu()
                     loss += l
@@ -101,6 +108,8 @@ class classificationParallel(object):
                             metrics['gpu_mem'] = 1e-9*torch.cuda.max_memory_allocated()
                         else:
                             metrics['gpu_mem'] = 0
+                        if scheduler:
+                            metrics['lr'] = self.lr_sched(lr,epoch,epochs,scheduler)
                         pbar_inner.set_postfix(metrics)
 
                 loss /= len(train_loader)
@@ -116,6 +125,8 @@ class classificationParallel(object):
                         metrics['gpu_mem'] = 1e-9*torch.cuda.max_memory_allocated()
                     else:
                         metrics['gpu_mem'] = 0
+                    if scheduler:
+                        metrics['lr'] = self.lr_sched(lr,epoch,epochs,scheduler)
                     pbar.set_postfix(metrics)
 
                 if save_weights is not None:
