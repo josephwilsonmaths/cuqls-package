@@ -1,14 +1,14 @@
-NUQLS: **N**eural **U**ncertainty **Q**uantification through **L**inearized **S**ampling
+CUQLS: **C**onjugate **U**ncertainty **Q**uantification through **L**inearized **S**ampling
 ---
 While neural networks have incredible predictive power, they lack a measure of their uncertainty. We require uncertainty so that we can answer the question: *when can we trust the output of a neural network?* 
 
-We present NUQLS, a lightweight, scalable, post-hoc method for quantifying the uncertainty in the prediction of neural networks. 
+We present CUQLS, a lightweight, scalable, post-hoc method for quantifying the uncertainty in the prediction of neural networks. 
 
 ### Installation
 ---
 To install this package:
 ```
-pip install git+https://github.com/josephwilsonmaths/NuqlsPackage.git
+pip install git+https://github.com/josephwilsonmaths/cuqls-package.git
 ```
 ### Regression
 ---
