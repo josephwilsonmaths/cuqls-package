@@ -3,7 +3,7 @@ import nuqls.regression
 import nuqls.regressionfull
 import nuqls.classification
 
-def Nuqls(
+def cuqls(
     network: torch.nn.Module,
     task: str ='regression'
     ):
