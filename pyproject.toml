@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cuqls"
-version = "0.0.151"
+version = "0.0.1"
 authors = [
     { name="ANON", email="anon@edu.au" },
 ]
@@ -18,4 +18,4 @@ classifiers = [
 ]
 
 [project.urls]
-"Github" = "https://github.com/josephwilsonmaths/NuqlsPackage"
+"Github" = "https://github.com/josephwilsonmaths/cuqls-package"

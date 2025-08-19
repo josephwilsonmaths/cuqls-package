@@ -1,9 +1,9 @@
 Metadata-Version: 2.4
-Name: nuqls
-Version: 0.0.12
+Name: cuqls
+Version: 0.0.1
 Summary: TODO
 Author-email: Joseph Wilson <joseph.wilson1@uqconnect.edu.au>
-Project-URL: Github, https://github.com/josephwilsonmaths/NuqlsPackage
+Project-URL: Github, https://github.com/josephwilsonmaths/cuqls-package
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
