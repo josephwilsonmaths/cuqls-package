@@ -1,7 +1,6 @@
 import torch
-import nuqls.regression
-import nuqls.regressionfull
-import nuqls.classification
+import cuqls.regression
+import cuqls.classification
 
 def cuqls(
     network: torch.nn.Module,
@@ -9,8 +8,8 @@ def cuqls(
     ):
     
     if task == 'regression':
-        return nuqls.regression.regressionParallel(network)
+        return cuqls.regression.regressionParallel(network)
     
     elif task == 'classification':
-        return nuqls.classification.classificationParallel(network)
+        return cuqls.classification.classificationParallel(network)
     
