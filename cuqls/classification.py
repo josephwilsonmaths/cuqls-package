@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 import tqdm
 import copy
 import nuqls.utils as utils
+from torchmetrics.classification import MulticlassCalibrationError
 
 torch.set_default_dtype(torch.float64)
 
@@ -27,6 +28,7 @@ class classificationParallel(object):
         self.ck = torch.nn.Sequential(*first_layers)
         self.llp = list(self.ck.parameters())[-1].shape[0]
         self.theta_t = utils.flatten(self.params)[-(self.llp*self.num_output+self.num_output):-self.num_output]
+        self.scale_cal = 1 # this will multiply the predictions, can change using ternary search to optimise ECE.
 
     def jvp(self, x, v):
         j = self.ck(x.to(self.device)).detach().reshape(x.shape[0], self.llp)
@@ -168,7 +170,7 @@ class classificationParallel(object):
         del f_lin
         del pred_s
     
-        return id_predictions
+        return id_predictions * self.scale_cal
     
     def UncertaintyPrediction(self, test, test_bs):
 
@@ -185,36 +187,30 @@ class classificationParallel(object):
         f_nlin = self.network(x)
         f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
                             f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
-        return f_lin.detach().permute(2,0,1) 
+        return f_lin.detach().permute(2,0,1) * self.scale_cal
     
+    def HyperparameterTuning(self, validation, metric = 'ece', left = 1e-2, right = 1e2, its = 100, verbose=False):
+        predictions = self.test(validation, test_bs=200)
 
-def ternary_search(f, left, right, its, verbose=False):
-    left_input, right_input = left, right
+        loader = DataLoader(validation,batch_size=100)
+        val_targets = torch.cat([y for _,y in loader])
 
-    # Ternary Search
-    for _ in range(its):
-        left_third = left_input + (right_input - left_input) / 3
-        right_third = right_input - (right_input - left_input) / 3
-
-        # Left function value
-        left_f = f(left_third)
-
-        # Right ECE
-        right_f = f(right_third)
-
-        if left_f > right_f:
-            left_input = left_third
+        if metric == 'ece':
+            ece_compute = MulticlassCalibrationError(num_classes=self.num_output,n_bins=10,norm='l1')
+            def ece_eval(gamma):
+                mean_prediction = (predictions * gamma).softmax(-1).mean(0)
+                return ece_compute(mean_prediction, val_targets).cpu().item()
+            f = ece_eval
         else:
-            right_input = right_third
+            print('Invalid metric choice. Valid choices are: [ece].')
 
-        input = (left_input + right_input) / 2
+        scale = utils.ternary_search(f = f,
+                               left=left,
+                               right=right,
+                               its=its,
+                               verbose=verbose,
+                               input_name="scale",
+                               output_name="ECE")
 
-        # Print info
-        if verbose:
-            print(f'\input: {input:.3}; function: [{left_f:.1},{right_f:.1}]') 
-
-        if abs(right_input - left_input) <= 1e-2:
-            if verbose:
-                print('Converged.')
-            break
+        self.scale_cal = scale
     

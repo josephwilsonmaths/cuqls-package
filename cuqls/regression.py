@@ -126,46 +126,13 @@ class regressionParallel(object):
             obs_map, predicted = utils.calibration_curve_r(val_y,val_predictions.mean(1),scaled_nuqls_predictions.var(1),11)
             return torch.mean(torch.square(obs_map - predicted)).item()
 
-        # left_scale, right_scale = left, right
-
-        scale = ternary_search(f = ece_eval,
+        scale = utils.ternary_search(f = ece_eval,
                                left=left,
                                right=right,
                                its=its,
                                verbose=verbose,
                                input_name="scale",
                                output_name="ECE")
-
-        # # Ternary Search
-        # for k in range(its):
-        #     left_third = left_scale + (right_scale - left_scale) / 3
-        #     right_third = right_scale - (right_scale - left_scale) / 3
-
-        #     # Left ECE
-        #     scaled_nuqls_predictions = val_predictions * left_third
-        #     obs_map, predicted = utils.calibration_curve_r(val_y,val_predictions.mean(1),scaled_nuqls_predictions.var(1),11)
-        #     left_ece = torch.mean(torch.square(obs_map - predicted))
-
-        #     # Right ECE
-        #     scaled_nuqls_predictions = val_predictions * right_third
-        #     obs_map, predicted = utils.calibration_curve_r(val_y,val_predictions.mean(1),scaled_nuqls_predictions.var(1),11)
-        #     right_ece = torch.mean(torch.square(obs_map - predicted))
-
-        #     if left_ece > right_ece:
-        #         left_scale = left_third
-        #     else:
-        #         right_scale = right_third
-
-        #     scale = (left_scale + right_scale) / 2
-
-        #     # Print info
-        #     if verbose:
-        #         print(f'\nSCALE {scale:.3}:: MAP: [{left_ece:.1%},{right_ece:.1%}]') 
-
-        #     if abs(right_scale - left_scale) <= 1e-2:
-        #         if verbose:
-        #             print('Converged.')
-        #         break
 
         self.scale_cal = scale
 
@@ -179,35 +146,3 @@ class regressionParallel(object):
 
         pred_lin = J @ (self.theta - theta_t.unsqueeze(1)) + f_nlin ## n x S
         return pred_lin.detach()
-    
-def ternary_search(f, left, right, its, verbose=False, input_name = 'input', output_name = 'function'):
-    left_input, right_input = left, right
-
-    # Ternary Search
-    for _ in range(its):
-        left_third = left_input + (right_input - left_input) / 3
-        right_third = right_input - (right_input - left_input) / 3
-
-        # Left function value
-        left_f = f(left_third)
-
-        # Right ECE
-        right_f = f(right_third)
-
-        if left_f > right_f:
-            left_input = left_third
-        else:
-            right_input = right_third
-
-        input = (left_input + right_input) / 2
-
-        # Print info
-        if verbose:
-            print(f'\n{input_name}: {input:.3}; {output_name}: [{left_f:.1},{right_f:.1}]') 
-
-        if abs(right_input - left_input) <= 1e-2:
-            if verbose:
-                print('Converged.')
-            break
-
-    return input

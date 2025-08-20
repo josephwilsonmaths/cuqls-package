@@ -18,3 +18,35 @@ def calibration_curve_r(target,mean,variance,c):
         ci_r = mean.reshape(-1) + z*torch.sqrt(variance.reshape(-1)) 
         observed_conf[i] = torch.logical_and(ci_l < target.reshape(-1), target.reshape(-1) < ci_r).type(torch.float).mean()
     return observed_conf,predicted_conf
+
+def ternary_search(f, left, right, its, verbose=False, input_name = 'input', output_name = 'function'):
+    left_input, right_input = left, right
+
+    # Ternary Search
+    for _ in range(its):
+        left_third = left_input + (right_input - left_input) / 3
+        right_third = right_input - (right_input - left_input) / 3
+
+        # Left function value
+        left_f = f(left_third)
+
+        # Right ECE
+        right_f = f(right_third)
+
+        if left_f > right_f:
+            left_input = left_third
+        else:
+            right_input = right_third
+
+        input = (left_input + right_input) / 2
+
+        # Print info
+        if verbose:
+            print(f'\n{input_name}: {input:.3}; {output_name}: [{left_f:.1},{right_f:.1}]') 
+
+        if abs(right_input - left_input) <= 1e-2:
+            if verbose:
+                print('Converged.')
+            break
+
+    return input
