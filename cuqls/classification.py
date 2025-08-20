@@ -148,7 +148,7 @@ class classificationParallel(object):
     def pre_load(self, pre_load):
         weight_dict = torch.load(pre_load, map_location=self.device)
         l = list(weight_dict['training'].keys())[-1]
-        self.theta_S = weight_dict['training'][l]['weights']
+        self.theta = weight_dict['training'][l]['weights']
         
     def test(self, test, test_bs=50):
 
@@ -186,4 +186,35 @@ class classificationParallel(object):
         f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
                             f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
         return f_lin.detach().permute(2,0,1) 
+    
+
+def ternary_search(f, left, right, its, verbose=False):
+    left_input, right_input = left, right
+
+    # Ternary Search
+    for _ in range(its):
+        left_third = left_input + (right_input - left_input) / 3
+        right_third = right_input - (right_input - left_input) / 3
+
+        # Left function value
+        left_f = f(left_third)
+
+        # Right ECE
+        right_f = f(right_third)
+
+        if left_f > right_f:
+            left_input = left_third
+        else:
+            right_input = right_third
+
+        input = (left_input + right_input) / 2
+
+        # Print info
+        if verbose:
+            print(f'\input: {input:.3}; function: [{left_f:.1},{right_f:.1}]') 
+
+        if abs(right_input - left_input) <= 1e-2:
+            if verbose:
+                print('Converged.')
+            break
     
