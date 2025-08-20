@@ -3,7 +3,7 @@ from torch.func import functional_call
 from torch.utils.data import DataLoader
 import tqdm
 import copy
-import nuqls.utils as utils
+import cuqls.utils as utils
 from torchmetrics.classification import MulticlassCalibrationError
 
 torch.set_default_dtype(torch.float64)
