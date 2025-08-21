@@ -95,6 +95,8 @@ class classificationParallel(object):
 
                     # Early stopping
                     if threshold:
+                        print(f'threshold = {threshold}')
+                        print(f'l <= threshold: {l < threshold}')
                         bt[:,l <= threshold] = 0.0
 
                     self.theta -= self.lr_sched(lr,epoch,epochs,scheduler)*bt
