@@ -205,6 +205,14 @@ class classificationParallel(object):
                 mean_prediction = (predictions * gamma).softmax(-1).mean(0)
                 return ece_compute(mean_prediction, val_targets).cpu().item()
             f = ece_eval
+            input_name, output_name = 'scale', 'ECE' 
+        elif metric == 'varroc-id':
+            def varroc_id_eval(gamma):
+                scaled_predictions = (predictions * gamma).softmax(-1)
+                idc, idic = utils.sort_preds(scaled_predictions,val_targets)
+                return utils.aucroc(idic.var(0).sum(1), idc.var(0).sum(1))
+            f = lambda x : -varroc_id_eval(x)
+            input_name, output_name = 'scale', 'VARROC-ID' 
         else:
             print('Invalid metric choice. Valid choices are: [ece].')
 
@@ -213,8 +221,8 @@ class classificationParallel(object):
                                right=right,
                                its=its,
                                verbose=verbose,
-                               input_name="scale",
-                               output_name="ECE")
+                               input_name=input_name,
+                               output_name=output_name)
 
         self.scale_cal = scale
     
