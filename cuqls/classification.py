@@ -99,10 +99,6 @@ class classificationParallel(object):
 
                     self.theta -= self.lr_sched(lr,epoch,epochs,scheduler)*bt
 
-                    if threshold:
-                        print(f'bt: {bt[:,l <= threshold]}')
-                        print(f'theta: {self.theta[:,l <= threshold]}')
-
                     a = (f_lin.argmax(1) == y.unsqueeze(1).repeat(1,S)).type(torch.float).sum(0).detach().cpu()  # f_lin: N x C x S, y: N
                     acc += a
 
