@@ -47,7 +47,7 @@ class classificationParallel(object):
         else:
             return lr
     
-    def train(self, train, batchsize, S, scale, epochs, lr, mu, scheduler=False, verbose=False, extra_verbose=False, save_weights=None):
+    def train(self, train, batchsize, S, scale, epochs, lr, mu, threshold = None, scheduler=False, verbose=False, extra_verbose=False, save_weights=None):
         train_loader = DataLoader(train,batchsize)
 
         self.theta = torch.randn(size=(self.llp*self.num_output,S),device=self.device)*scale + self.theta_t.unsqueeze(1)
@@ -90,10 +90,14 @@ class classificationParallel(object):
                     else:
                         bt = mu*bt + g
 
-                    self.theta -= self.lr_sched(lr,epoch,epochs,scheduler)*bt
-
                     l = (- 1 / x.shape[0] * torch.sum((ybar.flatten(0,1).unsqueeze(1) * torch.log(Mubar.flatten(0,1))),dim=0)).cpu()
                     loss += l
+
+                    # Early stopping
+                    if threshold:
+                        bt[:,l <= threshold] = 0.0
+
+                    self.theta -= self.lr_sched(lr,epoch,epochs,scheduler)*bt
 
                     a = (f_lin.argmax(1) == y.unsqueeze(1).repeat(1,S)).type(torch.float).sum(0).detach().cpu()  # f_lin: N x C x S, y: N
                     acc += a
