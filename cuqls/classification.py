@@ -194,7 +194,7 @@ class classificationParallel(object):
         for x,_ in test_loader:
             preds.append(self.eval(x)) # S x N x C
             if network_mean:
-                net_preds.append(self.network(x.to(self.device)))
+                net_preds.append(self.network(x.to(self.device)).detach())
         predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
         if network_mean:
             predictions_net = torch.cat(net_preds,dim=0)    
@@ -221,7 +221,7 @@ class classificationParallel(object):
         f_nlin = self.network(x)
         f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
                             f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
-        return f_lin.detach().permute(2,0,1) * self.scale_cal
+        return f_lin.detach().permute(2,0,1).detach() * self.scale_cal
     
     def HyperparameterTuning(self, validation, metric = 'ece', left = 1e-2, right = 1e2, its = 100, verbose=False):
         predictions = self.test(validation, test_bs=200)
