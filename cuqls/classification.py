@@ -183,35 +183,38 @@ class classificationParallel(object):
         l = list(weight_dict['training'].keys())[-1]
         self.theta = weight_dict['training'][l]['weights']
         
-    def test(self, test, test_bs=50):
+    def test(self, test, test_bs=50, network_mean=False):
 
         test_loader = DataLoader(test, test_bs)
         
         # Concatenate predictions
-        pred_s = []
-        for x,y in test_loader:
-            x, y = x.to(self.device), y.to(self.device)
-            f_nlin = self.network(x)
-            f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
-                            f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
-            pred_s.append(f_lin.detach())
-
-        id_predictions = torch.cat(pred_s,dim=0).permute(2,0,1) # N x C x S ---> S x N x C
-        
-        del f_lin
-        del pred_s
+        preds = []
+        if network_mean:
+            net_preds = []
+        for x,_ in test_loader:
+            preds.append(self.eval(x)) # S x N x C
+            if network_mean:
+                net_preds.append(self.network(x.to(self.device)))
+        predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
+        if network_mean:
+            predictions_net = torch.cat(net_preds,dim=0)    
+            return predictions, predictions_net
+        else:
+            return predictions
     
-        return id_predictions * self.scale_cal
-    
-    def UncertaintyPrediction(self, test, test_bs):
+    def UncertaintyPrediction(self, test, test_bs, network_mean=False):
+        predictions = self.test(test, test_bs, network_mean)
 
-        logits = self.test(test, test_bs)
+        if not network_mean:
+            probits = predictions.softmax(dim=-1)
+            mean_prob = probits.mean(0)
+            var_prob = probits.var(0)
+        else:
+            nuql_predictions, net_predictions = predictions
+            mean_prob = net_predictions.softmax(dim=-1)
+            var_prob = nuql_predictions.softmax(dim=-1).var(0)
 
-        probits = logits.softmax(dim=2)
-        mean_prob = probits.mean(0)
-        var_prob = probits.var(0)
-
-        return mean_prob.detach(), var_prob.detach()
+        return mean_prob.detach().cpu(), var_prob.detach().cpu()
     
     def eval(self,x):
         x = x.to(self.device)
@@ -387,35 +390,38 @@ class classificationParallelInterpolation(object):
         l = list(weight_dict['training'].keys())[-1]
         self.theta = weight_dict['training'][l]['weights']
         
-    def test(self, test, test_bs=50):
+    def test(self, test, test_bs=50, network_mean=False):
 
         test_loader = DataLoader(test, test_bs)
         
         # Concatenate predictions
-        pred_s = []
-        for x,y in test_loader:
-            x, y = x.to(self.device), y.to(self.device)
-            f_nlin = self.network(x)
-            f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
-                            f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
-            pred_s.append(f_lin.detach())
-
-        id_predictions = torch.cat(pred_s,dim=0).permute(2,0,1) # N x C x S ---> S x N x C
-        
-        del f_lin
-        del pred_s
+        preds = []
+        if network_mean:
+            net_preds = []
+        for x,_ in test_loader:
+            preds.append(self.eval(x)) # S x N x C
+            if network_mean:
+                net_preds.append(self.network(x.to(self.device)))
+        predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
+        if network_mean:
+            predictions_net = torch.cat(net_preds,dim=0)    
+            return predictions, predictions_net
+        else:
+            return predictions
     
-        return id_predictions * self.scale_cal
-    
-    def UncertaintyPrediction(self, test, test_bs):
+    def UncertaintyPrediction(self, test, test_bs, network_mean=False):
+        predictions = self.test(test, test_bs, network_mean)
 
-        logits = self.test(test, test_bs)
+        if not network_mean:
+            probits = predictions.softmax(dim=-1)
+            mean_prob = probits.mean(0)
+            var_prob = probits.var(0)
+        else:
+            nuql_predictions, net_predictions = predictions
+            mean_prob = net_predictions.softmax(dim=-1)
+            var_prob = nuql_predictions.softmax(dim=-1).var(0)
 
-        probits = logits.softmax(dim=2)
-        mean_prob = probits.mean(0)
-        var_prob = probits.var(0)
-
-        return mean_prob.detach(), var_prob.detach()
+        return mean_prob.detach().cpu(), var_prob.detach().cpu()
     
     def eval(self,x):
         x = x.to(self.device)
