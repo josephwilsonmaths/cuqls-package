@@ -13,3 +13,6 @@ def Cuqls(
     elif task == 'classification':
         return cuqls.classification.classificationParallel(network)
     
+    elif task == 'classificationInterpolation':
+        return cuqls.classification.classificationParallelInterpolation(network)
+    
