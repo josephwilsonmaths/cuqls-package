@@ -192,7 +192,8 @@ class classificationParallel(object):
         if network_mean:
             net_preds = []
         for x,_ in test_loader:
-            preds.append(self.eval(x)) # S x N x C
+            print(f'loop mem: {1e-9*torch.cuda.max_memory_allocated()}')
+            preds.append(self.eval(x).detach()) # S x N x C
             if network_mean:
                 net_preds.append(self.network(x.to(self.device)).detach())
         predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
