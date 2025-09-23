@@ -183,46 +183,42 @@ class classificationParallel(object):
         l = list(weight_dict['training'].keys())[-1]
         self.theta = weight_dict['training'][l]['weights']
         
-    def test(self, test, test_bs=50, network_mean=False):
+    def test(self, test, test_bs=50):
 
         test_loader = DataLoader(test, test_bs)
         
         # Concatenate predictions
-        preds = []
-        if network_mean:
-            net_preds = []
-        for x,_ in test_loader:
-            print(f'loop mem: {1e-9*torch.cuda.max_memory_allocated()}')
-            preds.append(self.eval(x).detach()) # S x N x C
-            if network_mean:
-                net_preds.append(self.network(x.to(self.device)).detach())
-        predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
-        if network_mean:
-            predictions_net = torch.cat(net_preds,dim=0)    
-            return predictions, predictions_net
-        else:
-            return predictions
+        pred_s = []
+        for x,y in test_loader:
+            x, y = x.to(self.device), y.to(self.device)
+            f_nlin = self.network(x)
+            f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
+                            f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
+            pred_s.append(f_lin.detach())
+
+        id_predictions = torch.cat(pred_s,dim=0).permute(2,0,1) # N x C x S ---> S x N x C
+        
+        del f_lin
+        del pred_s
     
-    def UncertaintyPrediction(self, test, test_bs, network_mean=False):
-        predictions = self.test(test, test_bs, network_mean)
+        return id_predictions * self.scale_cal
+    
+    def UncertaintyPrediction(self, test, test_bs):
 
-        if not network_mean:
-            probits = predictions.softmax(dim=-1)
-            mean_prob = probits.mean(0)
-            var_prob = probits.var(0)
-        else:
-            nuql_predictions, net_predictions = predictions
-            mean_prob = net_predictions.softmax(dim=-1)
-            var_prob = nuql_predictions.softmax(dim=-1).var(0)
+        logits = self.test(test, test_bs)
 
-        return mean_prob.detach().cpu(), var_prob.detach().cpu()
+        probits = logits.softmax(dim=2)
+        mean_prob = probits.mean(0)
+        var_prob = probits.var(0)
+
+        return mean_prob.detach(), var_prob.detach()
     
     def eval(self,x):
         x = x.to(self.device)
         f_nlin = self.network(x)
         f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
                             f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
-        return f_lin.detach().permute(2,0,1).detach() * self.scale_cal
+        return f_lin.detach().permute(2,0,1) * self.scale_cal
     
     def HyperparameterTuning(self, validation, metric = 'ece', left = 1e-2, right = 1e2, its = 100, verbose=False):
         predictions = self.test(validation, test_bs=200)
@@ -325,31 +321,71 @@ class classificationParallelInterpolation(object):
         with torch.no_grad():
             for epoch in pbar:
                 loss = 0
+                ce_loss = torch.zeros((S), device='cpu')
+                acc = torch.zeros((S), device='cpu')
 
                 if extra_verbose:
                     pbar_inner = tqdm.tqdm(train_loader)
                 else:
                     pbar_inner = train_loader
 
-                for x,_ in pbar_inner:
-                    x = x.to(device=self.device, non_blocking=True, dtype=torch.float64)
+                for x,y in pbar_inner:
+                    # Compute gradient
+                    x, y = x.to(device=self.device, non_blocking=True, dtype=torch.float64), y.to(device=self.device, non_blocking=True)
                     f = self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))) # N x C x S
                     g = self.vjp(x,f).permute(1,0,2).flatten(0,1) / x.shape[0] # P x C x S -> C x P x S -> CP x S
 
+                    # Momentum
                     if epoch == 0:
                         bt = g
                     else:
                         bt = mu*bt + g
 
+                    # Compute squared-error loss
                     l = (torch.square(f).sum()  / (x.shape[0] * self.num_output * S)).detach()
                     loss += l
+
+                    # Compute cross-entropy loss
+                    f_nlin = self.network(x)
+
+                    f_lin = (f.flatten(0,1) + f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,S)
+                    if self.num_output > 1:
+                        Mubar = torch.clamp(torch.nn.functional.softmax(f_lin,dim=1),1e-32,1)
+                        ybar = torch.nn.functional.one_hot(y,num_classes=self.num_output)
+                    else:
+                        Mubar = torch.clamp(torch.nn.functional.sigmoid(f_lin),1e-32,1)
+                        ybar = y.unsqueeze(1)
+
+                    if self.num_output > 1:
+                        ce_l = (-1 / x.shape[0] * torch.sum((ybar.unsqueeze(2) * torch.log(Mubar)),dim=(0,1))).detach().cpu()
+                    else:
+                        input1 = torch.clamp(-f_lin,max = 0) + torch.log(1 + torch.exp(f_lin.abs()))
+                        input2 = -f_lin - input1
+                        ce_l = - torch.sum((ybar.unsqueeze(2) * (-input1) + (1 - ybar).unsqueeze(2) * input2),dim=(0,1)) / x.shape[0]
+                    ce_loss += ce_l
+
+                    # Compute accuracy
+                    if self.num_output > 1:
+                        a = (f_lin.argmax(1) == y.unsqueeze(1).repeat(1,S)).type(torch.float).sum(0).detach().cpu()  # f_lin: N x C x S, y: N
+                    else:
+                        a = (f_lin.sigmoid().round().squeeze(1) == y.unsqueeze(1).repeat(1,S)).type(torch.float).sum(0).detach().cpu()  # f_lin: N x C x S, y: N
+                    acc += a
+
+                    # Iterate parameters
                     if decay is not None:
                         self.theta -= (lr * (decay ** epoch))*bt
                     else:
                         self.theta -= lr*bt
 
+                    # Record metrics
                     if extra_verbose:
-                        metrics = {'loss': l.item(),
+                        ma_l = ce_loss / (pbar_inner.format_dict['n'] + 1)
+                        ma_a = acc / ((pbar_inner.format_dict['n'] + 1) * x.shape[0])
+                        metrics = {'sq_loss': l.item(),
+                                   'min_ce_loss': ma_l.min().item(),
+                                    'max_ce_loss': ma_l.max().item(),
+                                    'min_acc': ma_a.min().item(),
+                                    'max_acc': ma_a.max().item(),
                                 'resid_norm': torch.mean(torch.square(g)).item()}
                         if self.device.type == 'cuda':
                             metrics['gpu_mem'] = 1e-9*torch.cuda.max_memory_allocated()
@@ -360,9 +396,15 @@ class classificationParallelInterpolation(object):
                         pbar_inner.set_postfix(metrics)
                 
                 loss /= len(train_loader)
+                ce_loss /= len(train_loader)
+                acc /= len(train)
 
                 if verbose:
-                    metrics = {'loss': loss.item(),
+                    metrics = {'sq_loss': loss.item(),
+                                   'min_ce_loss': ce_loss.min().item(),
+                                    'max_ce_loss': ce_loss.max().item(),
+                                    'min_acc': acc.min().item(),
+                                    'max_acc': acc.max().item(),
                                 'resid_norm': torch.mean(torch.square(g)).item()}
                     if self.device.type == 'cuda':
                         metrics['gpu_mem'] = 1e-9*torch.cuda.max_memory_allocated()
@@ -374,7 +416,7 @@ class classificationParallelInterpolation(object):
 
                 if save_weights is not None:
                     save_dict['training'][f'{epoch}'] = {
-                                'weights': self.theta,
+                                'weights': theta_S,
                                 'loss': loss.item(),
                                 'resid_norm': torch.mean(torch.square(g)).item()
                                 }
@@ -391,45 +433,42 @@ class classificationParallelInterpolation(object):
         l = list(weight_dict['training'].keys())[-1]
         self.theta = weight_dict['training'][l]['weights']
         
-    def test(self, test, test_bs=50, network_mean=False):
+    def test(self, test, test_bs=50):
 
         test_loader = DataLoader(test, test_bs)
         
         # Concatenate predictions
-        preds = []
-        if network_mean:
-            net_preds = []
-        for x,_ in test_loader:
-            preds.append(self.eval(x)) # S x N x C
-            if network_mean:
-                net_preds.append(self.network(x.to(self.device)).detach())
-        predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
-        if network_mean:
-            predictions_net = torch.cat(net_preds,dim=0)    
-            return predictions, predictions_net
-        else:
-            return predictions
+        pred_s = []
+        for x,y in test_loader:
+            x, y = x.to(self.device), y.to(self.device)
+            f_nlin = self.network(x)
+            f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
+                            f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
+            pred_s.append(f_lin.detach())
+
+        id_predictions = torch.cat(pred_s,dim=0).permute(2,0,1) # N x C x S ---> S x N x C
+        
+        del f_lin
+        del pred_s
     
-    def UncertaintyPrediction(self, test, test_bs, network_mean=False):
-        predictions = self.test(test, test_bs, network_mean)
+        return id_predictions * self.scale_cal
+    
+    def UncertaintyPrediction(self, test, test_bs):
 
-        if not network_mean:
-            probits = predictions.softmax(dim=-1)
-            mean_prob = probits.mean(0)
-            var_prob = probits.var(0)
-        else:
-            nuql_predictions, net_predictions = predictions
-            mean_prob = net_predictions.softmax(dim=-1)
-            var_prob = nuql_predictions.softmax(dim=-1).var(0)
+        logits = self.test(test, test_bs)
 
-        return mean_prob.detach().cpu(), var_prob.detach().cpu()
+        probits = logits.softmax(dim=2)
+        mean_prob = probits.mean(0)
+        var_prob = probits.var(0)
+
+        return mean_prob.detach(), var_prob.detach()
     
     def eval(self,x):
         x = x.to(self.device)
         f_nlin = self.network(x)
         f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
                             f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
-        return f_lin.detach().permute(2,0,1).detach() * self.scale_cal
+        return f_lin.detach().permute(2,0,1) * self.scale_cal
     
     def HyperparameterTuning(self, validation, metric = 'ece', left = 1e-2, right = 1e2, its = 100, verbose=False):
         predictions = self.test(validation, test_bs=200)
