@@ -370,7 +370,7 @@ class classificationParallelInterpolation(object):
 
                 if save_weights is not None:
                     save_dict['training'][f'{epoch}'] = {
-                                'weights': theta_S,
+                                'weights': self.theta,
                                 'loss': loss.item(),
                                 'resid_norm': torch.mean(torch.square(g)).item()
                                 }
