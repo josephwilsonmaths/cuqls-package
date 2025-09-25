@@ -13,7 +13,7 @@ class classificationParallel(object):
         self.network = network
         self.network.eval()
         self.device = next(network.parameters()).device
-        print(f'NUQLS is using device {self.device}.')
+        print(f'CUQLS is using device {self.device}.')
 
         self.params = tuple(self.network.parameters())
         child_list = list(network.children())
@@ -211,9 +211,9 @@ class classificationParallel(object):
             mean_prob = probits.mean(0)
             var_prob = probits.var(0)
         else:
-            nuql_predictions, net_predictions = predictions
+            cuql_predictions, net_predictions = predictions
             mean_prob = net_predictions.softmax(dim=-1)
-            var_prob = nuql_predictions.softmax(dim=-1).var(0)
+            var_prob = cuql_predictions.softmax(dim=-1).var(0)
 
         return mean_prob.detach().cpu(), var_prob.detach().cpu()
     
@@ -262,7 +262,7 @@ class classificationParallelInterpolation(object):
         self.network = network
         self.network.eval()
         self.device = next(network.parameters()).device
-        print(f'NUQLS is using device {self.device}.')
+        print(f'CUQLS is using device {self.device}.')
 
         self.params = tuple(self.network.parameters())
         child_list = list(network.children())
@@ -406,7 +406,7 @@ class classificationParallel(object):
         self.network = network
         self.network.eval()
         self.device = next(network.parameters()).device
-        print(f'NUQLS is using device {self.device}.')
+        print(f'CUQLS is using device {self.device}.')
 
         self.params = tuple(self.network.parameters())
         child_list = list(network.children())
@@ -603,9 +603,9 @@ class classificationParallel(object):
             mean_prob = probits.mean(0)
             var_prob = probits.var(0)
         else:
-            nuql_predictions, net_predictions = predictions
+            cuql_predictions, net_predictions = predictions
             mean_prob = net_predictions.softmax(dim=-1)
-            var_prob = nuql_predictions.softmax(dim=-1).var(0)
+            var_prob = cuql_predictions.softmax(dim=-1).var(0)
 
         return mean_prob.detach().cpu(), var_prob.detach().cpu()
     
@@ -654,7 +654,7 @@ class classificationParallelInterpolation(object):
         self.network = network
         self.network.eval()
         self.device = next(network.parameters()).device
-        print(f'NUQLS is using device {self.device}.')
+        print(f'CUQLS is using device {self.device}.')
 
         self.params = tuple(self.network.parameters())
         child_list = list(network.children())
@@ -856,9 +856,9 @@ class classificationParallelInterpolation(object):
             mean_prob = probits.mean(0)
             var_prob = probits.var(0)
         else:
-            nuql_predictions, net_predictions = predictions
+            cuql_predictions, net_predictions = predictions
             mean_prob = net_predictions.softmax(dim=-1)
-            var_prob = nuql_predictions.softmax(dim=-1).var(0)
+            var_prob = cuql_predictions.softmax(dim=-1).var(0)
 
         return mean_prob.detach().cpu(), var_prob.detach().cpu()
     
