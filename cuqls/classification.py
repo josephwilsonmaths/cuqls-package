@@ -478,7 +478,8 @@ class classificationParallelInterpolation(object):
     
     def eval(self,x):
         x = x.to(self.device)
-        f_nlin = self.network(x)
+        with torch.no_grad():
+            f_nlin = self.network(x)
         f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
                             f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
         return f_lin.detach().permute(2,0,1).detach() * self.scale_cal
