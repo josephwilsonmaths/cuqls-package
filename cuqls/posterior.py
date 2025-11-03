@@ -4,15 +4,16 @@ import cuqls.classification
 
 def Cuqls(
     network: torch.nn.Module,
-    task: str ='regression'
+    task: str ='regression',
+    precision: str = 'double'
     ):
     
     if task == 'regression':
         return cuqls.regression.regressionParallel(network)
     
     elif task == 'classification':
-        return cuqls.classification.classificationParallel(network)
+        return cuqls.classification.classificationParallel(network, precision)
     
     elif task == 'classificationInterpolation':
-        return cuqls.classification.classificationParallelInterpolation(network)
+        return cuqls.classification.classificationParallelInterpolation(network, precision)
     
