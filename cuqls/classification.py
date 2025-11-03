@@ -449,10 +449,12 @@ class classificationParallelInterpolation(object):
             if network_mean:
                 net_preds = []
             for x,_ in test_loader:
-                print(f'mem: {1e-9*torch.cuda.max_memory_allocated():.2f}GB')
+                
                 preds.append(self.eval(x)) # S x N x C
+                print(f'mem_c: {1e-9*torch.cuda.max_memory_allocated():.2f}GB')
                 if network_mean:
                     net_preds.append(self.network(x.to(self.device)).detach())
+                    print(f'mem_n: {1e-9*torch.cuda.max_memory_allocated():.2f}GB')
             predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
             if network_mean:
                 predictions_net = torch.cat(net_preds,dim=0)    
