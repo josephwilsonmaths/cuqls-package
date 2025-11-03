@@ -5,6 +5,7 @@ import tqdm
 import copy
 import cuqls.utils as utils
 from torchmetrics.classification import MulticlassCalibrationError
+import matplotlib.pyplot as plt
 
 # torch.set_default_dtype(torch.float64)
 
@@ -265,6 +266,7 @@ class classificationParallelInterpolation(object):
         self.device = next(network.parameters()).device
         self.dtype = (torch.float64 if precision == 'double' else (torch.float32 if precision == 'single' else torch.float16))
         print(f'CUQLS is using device {self.device}, dtype {self.dtype}.')
+        self.network.to(self.dtype)
 
         self.params = tuple(self.network.parameters())
         child_list = list(network.children())
@@ -276,9 +278,9 @@ class classificationParallelInterpolation(object):
         final_layer = child_list[-1]
         self.llp = list(final_layer.parameters())[0].size().numel()
         self.num_output = list(final_layer.parameters())[0].shape[0]
-        self.ck = torch.nn.Sequential(*first_layers)
+        self.ck = torch.nn.Sequential(*first_layers).to(self.dtype)
         self.llp = list(self.ck.parameters())[-1].shape[0]
-        self.theta_t = utils.flatten(self.params)[-(self.llp*self.num_output+self.num_output):-self.num_output]
+        self.theta_t = utils.flatten(self.params)[-(self.llp*self.num_output+self.num_output):-self.num_output].to(self.dtype)
         self.scale_cal = 1 # this will multiply the predictions, can change using ternary search to optimise ECE.
         self.J = None
 
@@ -298,7 +300,7 @@ class classificationParallelInterpolation(object):
             jt = self.J.T
         return torch.einsum('pn,ncs->pcs',jt,V).detach().to(self.device)
 
-    def train(self, train, batchsize, S, scale, epochs, lr, mu, decay = None, verbose=False, extra_verbose=False, save_weights=None):
+    def train(self, train, batchsize, S, scale, epochs, lr, mu, decay = None, verbose=False, extra_verbose=False, save_weights=None, plot_loss=None):
         
         train_loader = DataLoader(train,batchsize)
 
@@ -308,7 +310,7 @@ class classificationParallelInterpolation(object):
         else:
             self.J = None
 
-        self.theta = torch.randn(size=(self.llp*self.num_output,S),device=self.device)*scale + self.theta_t.unsqueeze(1)
+        self.theta = torch.randn(size=(self.llp*self.num_output,S),device=self.device,dtype=self.dtype)*scale + self.theta_t.unsqueeze(1)
         
         if verbose:
             pbar = tqdm.trange(epochs)
@@ -325,10 +327,16 @@ class classificationParallelInterpolation(object):
             save_dict['training'] = {}
         
         with torch.no_grad():
+
+            sq_loss_array = []
+            acc_array = []
+            ce_loss_array = []
+            
             for epoch in pbar:
                 loss = 0
                 ce_loss = torch.zeros((S), device='cpu')
                 acc = torch.zeros((S), device='cpu')
+                
 
                 if extra_verbose:
                     pbar_inner = tqdm.tqdm(train_loader)
@@ -349,6 +357,7 @@ class classificationParallelInterpolation(object):
 
                     # Compute squared-error loss
                     l = (torch.square(f).sum()  / (x.shape[0] * self.num_output * S)).detach()
+                    sq_loss_array.append(l.mean().item())
                     loss += l
 
                     # Compute cross-entropy loss
@@ -356,10 +365,10 @@ class classificationParallelInterpolation(object):
 
                     f_lin = (f.flatten(0,1) + f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,S)
                     if self.num_output > 1:
-                        Mubar = torch.clamp(torch.nn.functional.softmax(f_lin,dim=1),1e-32,1)
+                        Mubar = torch.clamp(torch.nn.functional.softmax(f_lin,dim=1),torch.finfo(self.dtype).eps,1)
                         ybar = torch.nn.functional.one_hot(y,num_classes=self.num_output)
                     else:
-                        Mubar = torch.clamp(torch.nn.functional.sigmoid(f_lin),1e-32,1)
+                        Mubar = torch.clamp(torch.nn.functional.sigmoid(f_lin),torch.finfo(self.dtype).eps,1)
                         ybar = y.unsqueeze(1)
 
                     if self.num_output > 1:
@@ -368,6 +377,7 @@ class classificationParallelInterpolation(object):
                         input1 = torch.clamp(-f_lin,max = 0) + torch.log(1 + torch.exp(f_lin.abs()))
                         input2 = -f_lin - input1
                         ce_l = - torch.sum((ybar.unsqueeze(2) * (-input1) + (1 - ybar).unsqueeze(2) * input2),dim=(0,1)) / x.shape[0]
+                    ce_loss_array.append(ce_l.mean().item())
                     ce_loss += ce_l
 
                     # Compute accuracy
@@ -376,6 +386,7 @@ class classificationParallelInterpolation(object):
                     else:
                         a = (f_lin.sigmoid().round().squeeze(1) == y.unsqueeze(1).repeat(1,S)).type(self.dtype).sum(0).detach().cpu()  # f_lin: N x C x S, y: N
                     acc += a
+                    acc_array.append((a / x.shape[0]).mean().item())
 
                     # Iterate parameters
                     if decay is not None:
@@ -428,6 +439,19 @@ class classificationParallelInterpolation(object):
                                 }
                     torch.save(save_dict, save_weights)
 
+                if plot_loss is not None:
+                    f, (ax1,ax2,ax3) = plt.subplots(1,3, figsize=(14,4))
+                    ax1.plot(sq_loss_array,linestyle='--',marker='x',color='blue')
+                    ax1.set_xlabel('iter')
+                    ax1.set_ylabel('Sq Loss')
+                    ax2.plot(ce_loss_array,linestyle='--',marker='x',color='red')
+                    ax2.set_xlabel('iter')
+                    ax2.set_ylabel('CE Loss')
+                    ax3.plot(acc_array,linestyle='--',marker='x',color='green')
+                    ax3.set_xlabel('iter')
+                    ax3.set_ylabel('Acc')
+                    plt.savefig(plot_loss + f"cuqls_loss_plot.pdf", format='pdf',bbox_inches='tight')
+
         if verbose:
             print('Posterior samples computed!')
         self.J = None
@@ -435,27 +459,28 @@ class classificationParallelInterpolation(object):
         return loss.item(), ce_loss.max().item(), acc.min().item()
     
     def pre_load(self, pre_load):
-        weight_dict = torch.load(pre_load, weights_only=False, map_location=self.device)
+        weight_dict = torch.load(pre_load, map_location=self.device)
         l = list(weight_dict['training'].keys())[-1]
         self.theta = weight_dict['training'][l]['weights']
         
     def test(self, test, test_bs=50, network_mean=False):
+
         test_loader = DataLoader(test, test_bs)
+        
         # Concatenate predictions
-        with torch.no_grad():
-            preds = []
+        preds = []
+        if network_mean:
+            net_preds = []
+        for x,_ in test_loader:
+            preds.append(self.eval(x.to(self.dtype))) # S x N x C
             if network_mean:
-                net_preds = []
-            for x,_ in test_loader:
-                preds.append(self.eval(x)) # S x N x C
-                if network_mean:
-                    net_preds.append(self.network(x.to(self.device)).detach())
-            predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
-            if network_mean:
-                predictions_net = torch.cat(net_preds,dim=0)    
-                return predictions, predictions_net
-            else:
-                return predictions
+                net_preds.append(self.network(x.to(device=self.device, dtype=self.dtype)).detach())
+        predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
+        if network_mean:
+            predictions_net = torch.cat(net_preds,dim=0)    
+            return predictions, predictions_net
+        else:
+            return predictions
     
     def UncertaintyPrediction(self, test, test_bs, network_mean=False):
         predictions = self.test(test, test_bs, network_mean)
@@ -473,8 +498,7 @@ class classificationParallelInterpolation(object):
     
     def eval(self,x):
         x = x.to(self.device)
-        with torch.no_grad():
-            f_nlin = self.network(x)
+        f_nlin = self.network(x)
         f_lin = (self.jvp(x, (self.theta.to(self.device) - self.theta_t.unsqueeze(1))).flatten(0,1) + 
                             f_nlin.reshape(-1,1)).reshape(x.shape[0],self.num_output,-1)
         return f_lin.detach().permute(2,0,1).detach() * self.scale_cal
