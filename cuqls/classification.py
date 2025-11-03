@@ -435,7 +435,7 @@ class classificationParallelInterpolation(object):
         return loss.item(), ce_loss.max().item(), acc.min().item()
     
     def pre_load(self, pre_load):
-        weight_dict = torch.load(pre_load, map_location=self.device)
+        weight_dict = torch.load(pre_load, weights_only=True, map_location=self.device)
         l = list(weight_dict['training'].keys())[-1]
         self.theta = weight_dict['training'][l]['weights']
         
