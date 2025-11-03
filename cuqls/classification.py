@@ -444,19 +444,20 @@ class classificationParallelInterpolation(object):
         test_loader = DataLoader(test, test_bs)
         
         # Concatenate predictions
-        preds = []
-        if network_mean:
-            net_preds = []
-        for x,_ in test_loader:
-            preds.append(self.eval(x)) # S x N x C
+        with torch.no_grad():
+            preds = []
             if network_mean:
-                net_preds.append(self.network(x.to(self.device)).detach())
-        predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
-        if network_mean:
-            predictions_net = torch.cat(net_preds,dim=0)    
-            return predictions, predictions_net
-        else:
-            return predictions
+                net_preds = []
+            for x,_ in test_loader:
+                preds.append(self.eval(x)) # S x N x C
+                if network_mean:
+                    net_preds.append(self.network(x.to(self.device)).detach())
+            predictions = torch.cat(preds,dim=1) # N x C x S ---> S x N x C
+            if network_mean:
+                predictions_net = torch.cat(net_preds,dim=0)    
+                return predictions, predictions_net
+            else:
+                return predictions
     
     def UncertaintyPrediction(self, test, test_bs, network_mean=False):
         predictions = self.test(test, test_bs, network_mean)
