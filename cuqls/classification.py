@@ -186,7 +186,7 @@ class classificationParallel(object):
         l = list(weight_dict['training'].keys())[-1]
         self.theta = weight_dict['training'][l]['weights']
         
-    def test(self, test, test_bs=50, network_mean=False):
+    def test(self, test, test_bs=50, network_mean=False, verbose=False):
 
         test_loader = DataLoader(test, test_bs)
         
@@ -194,7 +194,13 @@ class classificationParallel(object):
         preds = []
         if network_mean:
             net_preds = []
-        for x,_ in test_loader:
+
+        if verbose:
+            pbar = tqdm.tqdm(test_loader)
+        else:
+            pbar = test_loader
+
+        for x,_ in pbar:
             preds.append(self.eval(x)) # S x N x C
             if network_mean:
                 net_preds.append(self.network(x.to(self.device)).detach())
@@ -205,8 +211,8 @@ class classificationParallel(object):
         else:
             return predictions
     
-    def UncertaintyPrediction(self, test, test_bs, network_mean=False):
-        predictions = self.test(test, test_bs, network_mean)
+    def UncertaintyPrediction(self, test, test_bs, network_mean=False, verbose=False):
+        predictions = self.test(test, test_bs, network_mean, verbose)
 
         if not network_mean:
             probits = predictions.softmax(dim=-1)
